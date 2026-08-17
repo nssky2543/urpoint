@@ -1,0 +1,2 @@
+ALTER TABLE "store_line_connections" ADD COLUMN "login_verified_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "store_line_connections" ADD COLUMN "liff_verified_at" timestamp with time zone;
