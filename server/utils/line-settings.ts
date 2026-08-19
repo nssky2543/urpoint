@@ -1,9 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { useDb } from '../database/client'
 import { storeLineConnections } from '../database/schema'
+import type { H3Event } from 'h3'
 import {
   buildLineUrls,
   computeConnectionCompleteness,
+  resolvePublicBaseUrlFromEvent,
 } from './line'
 import { decryptSecret, maskSecret } from './line-crypto'
 import type { SessionStore } from './store'
@@ -20,11 +22,12 @@ export async function getStoreLineConnection(storeId: string) {
   return row ?? null
 }
 
-export function toPublicLineSettings(store: SessionStore, row: LineConnectionRow) {
+export function toPublicLineSettings(store: SessionStore, row: LineConnectionRow, event?: H3Event) {
   const urls = buildLineUrls({
     storeSlug: store.slug,
     webhookKey: row.webhookKey,
     liffId: row.liffId,
+    baseUrl: event ? resolvePublicBaseUrlFromEvent(event) : undefined,
   })
 
   const completeness = computeConnectionCompleteness({

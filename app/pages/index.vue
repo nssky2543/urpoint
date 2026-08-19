@@ -1,4 +1,8 @@
 <script setup lang="ts">
+definePageMeta({
+  middleware: 'guest',
+})
+
 useSeoMeta({
   title: 'UrPoint — LINE CRM สำหรับร้านค้าที่อยากรู้จักลูกค้ามากขึ้น',
   description: 'จัดการข้อมูลลูกค้า Broadcast และ Rich Menu ผ่าน LINE OA ในระบบเดียว',

@@ -2,6 +2,8 @@ import {
   createHash,
   randomBytes,
 } from 'node:crypto'
+import { getRequestHeader } from 'h3'
+import type { H3Event } from 'h3'
 
 export type LineBotInfo = {
   userId: string
@@ -31,12 +33,63 @@ export function getAppBaseUrl() {
   return 'http://localhost:3000'
 }
 
+function isLocalHostname(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1'
+}
+
+export function resolvePublicBaseUrl(input: {
+  host?: string | null
+  forwardedHost?: string | null
+  forwardedProto?: string | null
+}) {
+  const configured = getAppBaseUrl()
+  const host = (input.forwardedHost || input.host || '').split(',')[0].trim().replace(/\/+$/, '')
+
+  if (!host) {
+    return configured
+  }
+
+  let configuredHostname = ''
+  try {
+    configuredHostname = new URL(configured).hostname
+  }
+  catch {
+    configuredHostname = ''
+  }
+
+  const hostname = host.split(':')[0] || host
+  const forwardedProto = (input.forwardedProto || '').split(',')[0].trim().toLowerCase()
+  const proto = forwardedProto === 'http' || forwardedProto === 'https'
+    ? forwardedProto
+    : isLocalHostname(hostname)
+      ? 'http'
+      : 'https'
+
+  const origin = `${proto}://${host}`
+
+  // Only trust a public forwarded origin when env still points at localhost.
+  if (isLocalHostname(configuredHostname) && !isLocalHostname(hostname)) {
+    return origin
+  }
+
+  return configured
+}
+
+export function resolvePublicBaseUrlFromEvent(event: H3Event) {
+  return resolvePublicBaseUrl({
+    host: getRequestHeader(event, 'host'),
+    forwardedHost: getRequestHeader(event, 'x-forwarded-host'),
+    forwardedProto: getRequestHeader(event, 'x-forwarded-proto'),
+  })
+}
+
 export function buildLineUrls(input: {
   storeSlug: string
   webhookKey: string
   liffId?: string | null
+  baseUrl?: string | null
 }) {
-  const base = getAppBaseUrl()
+  const base = (input.baseUrl || getAppBaseUrl()).replace(/\/+$/, '')
   const liffId = input.liffId?.trim() || ''
 
   return {
@@ -59,7 +112,14 @@ export function normalizeLiffId(value: unknown) {
   if (typeof value !== 'string') {
     return ''
   }
-  return value.trim()
+
+  const trimmed = value.trim()
+  const fromUrl = trimmed.match(/liff\.line\.me\/([0-9A-Za-z-]+)/i)
+  if (fromUrl?.[1]) {
+    return fromUrl[1]
+  }
+
+  return trimmed
 }
 
 export function normalizeOptionalSecret(value: unknown) {
@@ -182,12 +242,32 @@ export async function upsertLiffApp(
   if (!response.ok) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'สร้างหรืออัปเดต LIFF กับ LINE ไม่สำเร็จ',
+      statusMessage: await lineErrorMessage(response, 'สร้างหรืออัปเดต LIFF กับ LINE ไม่สำเร็จ'),
     })
   }
 
-  const result = await response.json() as { liffId?: string }
-  return { liffId: result.liffId || liffId || '' }
+  const result = await readResponseJson<{ liffId?: string }>(response)
+  return { liffId: result?.liffId || liffId || '' }
+}
+
+async function readResponseJson<T>(response: Response): Promise<T | null> {
+  const text = await response.text()
+  if (!text.trim()) {
+    return null
+  }
+
+  try {
+    return JSON.parse(text) as T
+  }
+  catch {
+    return null
+  }
+}
+
+async function lineErrorMessage(response: Response, fallback: string) {
+  const result = await readResponseJson<{ message?: string }>(response)
+  const message = result?.message?.trim()
+  return message || fallback
 }
 
 export async function getLiffApp(

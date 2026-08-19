@@ -18,8 +18,8 @@ type DashboardSummary = {
   lineActive: boolean
 }
 
-const loading = ref(true)
-const summary = ref<DashboardSummary | null>(null)
+const { data: summary, status } = await useFetch<DashboardSummary>('/api/dashboard/summary')
+const loading = computed(() => status.value === 'pending')
 
 const lineStatusLabel = computed(() => {
   if (!summary.value) return '—'
@@ -38,19 +38,6 @@ const bookingHint = computed(() => {
   return summary.value.store.staffBookingEnabled
     ? 'เปิดจองช่าง (ใช้เมื่อระบบจองพร้อม)'
     : 'ปิดจองช่าง (ใช้เมื่อระบบจองพร้อม)'
-})
-
-async function loadSummary() {
-  loading.value = true
-  try {
-    summary.value = await $fetch<DashboardSummary>('/api/dashboard/summary')
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => {
-  void loadSummary()
 })
 
 useSeoMeta({

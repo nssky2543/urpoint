@@ -14,7 +14,9 @@ import {
   getLiffApp,
   issueLineChannelAccessToken,
   normalizeChannelId,
+  normalizeLiffId,
   normalizeOptionalSecret,
+  resolvePublicBaseUrl,
   upsertLiffApp,
   verifyLineChannelAccessToken,
 } from './line'
@@ -98,6 +100,30 @@ describe('line helpers', () => {
     expect(request?.url).toBe('https://api.line.me/liff/v1/apps')
     expect(request?.init?.method).toBe('POST')
     expect(String(request?.init?.body)).toContain('https://example.com/m/demo')
+  })
+
+  test('updates an existing LIFF app when LINE returns an empty body', async () => {
+    let request: { url: string, init?: RequestInit } | undefined
+    const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+      request = { url: String(url), init }
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    const result = await upsertLiffApp({
+      accessToken: 'login-token',
+      liffId: '2010909637-Ngw5nvws',
+      endpointUrl: 'https://testlineapp.kpnsystems.com/m/n-phink2',
+      description: 'UrPoint test barber',
+    }, fetchFn)
+
+    expect(result.liffId).toBe('2010909637-Ngw5nvws')
+    expect(request?.url).toBe('https://api.line.me/liff/v1/apps/2010909637-Ngw5nvws')
+    expect(request?.init?.method).toBe('PUT')
+  })
+
+  test('extracts LIFF ID from a LIFF URL', () => {
+    expect(normalizeLiffId('https://liff.line.me/2010909637-Ngw5nvws')).toBe('2010909637-Ngw5nvws')
+    expect(normalizeLiffId('  2010909637-Ngw5nvws  ')).toBe('2010909637-Ngw5nvws')
   })
 
   test('verifies an existing LIFF app without changing its endpoint', async () => {
@@ -230,6 +256,48 @@ describe('line helpers', () => {
     expect(urls.webhookUrl).toContain('/api/line/whkey123/webhook')
     expect(urls.liffUrl).toBe('https://liff.line.me/2001234567-AbCdEfGh')
     expect(urls.callbackUrl).toContain('/api/line/callback')
+  })
+
+  test('prefers the public forwarded origin over localhost env', () => {
+    const previous = process.env.NUXT_PUBLIC_APP_URL
+    process.env.NUXT_PUBLIC_APP_URL = 'http://localhost:3000'
+
+    try {
+      expect(resolvePublicBaseUrl({
+        host: 'localhost:3000',
+        forwardedHost: 'testlineapp.kpnsystems.com',
+        forwardedProto: 'https',
+      })).toBe('https://testlineapp.kpnsystems.com')
+
+      expect(resolvePublicBaseUrl({
+        host: 'localhost:3000',
+      })).toBe('http://localhost:3000')
+
+      expect(buildLineUrls({
+        storeSlug: 'demo-shop',
+        webhookKey: 'whkey123',
+        baseUrl: 'https://testlineapp.kpnsystems.com',
+      }).callbackUrl).toBe('https://testlineapp.kpnsystems.com/api/line/callback')
+    }
+    finally {
+      process.env.NUXT_PUBLIC_APP_URL = previous
+    }
+  })
+
+  test('keeps a configured public origin even if forwarded host is spoofed', () => {
+    const previous = process.env.NUXT_PUBLIC_APP_URL
+    process.env.NUXT_PUBLIC_APP_URL = 'https://app.example.com'
+
+    try {
+      expect(resolvePublicBaseUrl({
+        host: 'app.example.com',
+        forwardedHost: 'evil.example',
+        forwardedProto: 'https',
+      })).toBe('https://app.example.com')
+    }
+    finally {
+      process.env.NUXT_PUBLIC_APP_URL = previous
+    }
   })
 
   test('normalizes channel inputs and optional secrets', () => {

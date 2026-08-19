@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isLineReturnQuery, stripLineReturnSearch } from '#shared/utils/liff-return'
+
 definePageMeta({
   layout: false,
 })
@@ -8,6 +10,7 @@ type PublicStore = {
   lineEnabled: boolean
   otpEnabled: boolean
   liffId: string | null
+  liffUrl: string | null
 }
 
 type Member = {
@@ -22,10 +25,8 @@ type Member = {
 const route = useRoute()
 const storeSlug = computed(() => String(route.params.storeSlug || ''))
 
-const loading = ref(true)
-const error = ref('')
-const storeInfo = ref<PublicStore | null>(null)
 const member = ref<Member | null>(null)
+const error = ref('')
 const isNewMember = ref(false)
 const pendingOtp = ref(false)
 const pendingVerify = ref(false)
@@ -34,7 +35,10 @@ const otpInput = ref('')
 const otpRequested = ref(false)
 const devCode = ref('')
 const loggingOut = ref(false)
-const { theme, themeLabel, toggleTheme } = useAppTheme()
+const pendingLineLogin = ref(false)
+const resolvingLineSession = ref(isLineReturnQuery(route.query as Record<string, unknown>))
+const { theme, themeLabel } = useAppTheme()
+let liffInitPromise: Promise<void> | null = null
 
 useSeoMeta({
   title: 'สมาชิกร้าน — UrPoint',
@@ -76,10 +80,40 @@ function getLiff() {
       init: (opts: { liffId: string }) => Promise<void>
       isLoggedIn: () => boolean
       isInClient: () => boolean
-      login: () => void
+      login: (opts?: { redirectUri?: string }) => void
+      logout: () => void
       getIDToken: () => string | null
     }
   }).liff
+}
+
+function memberRedirectUri() {
+  return `${window.location.origin}${window.location.pathname}`
+}
+
+function stripLiffQuery() {
+  const result = stripLineReturnSearch(window.location.search)
+  if (result.changed) {
+    window.history.replaceState({}, '', `${window.location.pathname}${result.search}${window.location.hash}`)
+  }
+}
+
+async function ensureLiff() {
+  const liffId = storeInfo.value?.liffId
+  if (!storeInfo.value?.lineEnabled || !liffId) {
+    throw new Error('ร้านนี้ยังไม่เปิดเข้าสู่ระบบด้วย LINE')
+  }
+
+  await loadLiffSdk()
+  const liffApi = getLiff()
+  if (!liffInitPromise) {
+    liffInitPromise = liffApi.init({ liffId }).catch((error) => {
+      liffInitPromise = null
+      throw error
+    })
+  }
+  await liffInitPromise
+  return liffApi
 }
 
 async function verifyLiffToken(idToken: string) {
@@ -98,43 +132,55 @@ async function verifyLiffToken(idToken: string) {
   isNewMember.value = response.isNewMember
 }
 
-async function tryLiffLogin(autoLogin: boolean) {
-  const liffId = storeInfo.value?.liffId
-  if (!storeInfo.value?.lineEnabled || !liffId) {
+const LIFF_LOGIN_GUARD = 'urpoint.liffLoginRedirect'
+
+async function tryLiffLogin(loginIfNeeded: boolean | 'in-client') {
+  if (!storeInfo.value?.lineEnabled || !storeInfo.value.liffId) {
     return false
   }
 
-  await loadLiffSdk()
-  const liffApi = getLiff()
-  await liffApi.init({ liffId })
+  const liffApi = await ensureLiff()
 
   if (!liffApi.isLoggedIn()) {
-    if (autoLogin && liffApi.isInClient()) {
-      liffApi.login()
+    const shouldLogin = loginIfNeeded === true || (loginIfNeeded === 'in-client' && liffApi.isInClient())
+    const alreadyRedirected = import.meta.client && sessionStorage.getItem(LIFF_LOGIN_GUARD) === '1'
+    if (shouldLogin && !alreadyRedirected) {
+      sessionStorage.setItem(LIFF_LOGIN_GUARD, '1')
+      liffApi.login({ redirectUri: memberRedirectUri() })
       return true
     }
     return false
   }
 
+  sessionStorage.removeItem(LIFF_LOGIN_GUARD)
   const idToken = liffApi.getIDToken()
   if (!idToken) {
     throw new Error('ไม่พบ LINE ID token')
   }
 
   await verifyLiffToken(idToken)
+  stripLiffQuery()
   return true
 }
 
-async function startLineLogin() {
+async function onLineLoginClick(event: MouseEvent) {
+  event.preventDefault()
   error.value = ''
+  pendingLineLogin.value = true
+  sessionStorage.removeItem(LIFF_LOGIN_GUARD)
   try {
-    const usedLiff = await tryLiffLogin(true)
-    if (!usedLiff && !member.value) {
-      window.location.href = `/api/customer/line/start?slug=${encodeURIComponent(storeSlug.value)}`
+    const started = await tryLiffLogin(true)
+    if (member.value || started) {
+      return
     }
+    error.value = 'เข้าสู่ระบบด้วย LINE ไม่สำเร็จ กรุณาลองอีกครั้ง'
+    pendingLineLogin.value = false
+    sessionStorage.removeItem(LIFF_LOGIN_GUARD)
   }
   catch (err) {
     error.value = fetchErrorMessage(err, 'เข้าสู่ระบบด้วย LINE ไม่สำเร็จ')
+    pendingLineLogin.value = false
+    sessionStorage.removeItem(LIFF_LOGIN_GUARD)
   }
 }
 
@@ -188,6 +234,17 @@ async function logout() {
   loggingOut.value = true
   try {
     await $fetch('/api/customer/logout', { method: 'POST' })
+    try {
+      if (liffInitPromise) {
+        const liffApi = getLiff()
+        if (liffApi.isLoggedIn()) {
+          liffApi.logout()
+        }
+      }
+    }
+    catch {
+      // LIFF may not be initialized on this visit
+    }
     member.value = null
     isNewMember.value = false
     otpRequested.value = false
@@ -199,43 +256,70 @@ async function logout() {
   }
 }
 
-async function bootstrap() {
-  loading.value = true
-  error.value = ''
+async function bootstrapLiff() {
+  if (member.value || !storeInfo.value?.lineEnabled || !storeInfo.value.liffId) {
+    resolvingLineSession.value = false
+    return
+  }
 
+  const returningFromLine = isLineReturnQuery(route.query as Record<string, unknown>)
+  if (!returningFromLine) {
+    resolvingLineSession.value = false
+    return
+  }
+
+  resolvingLineSession.value = true
   try {
-    storeInfo.value = await $fetch<PublicStore>(
-      `/api/public/store/${encodeURIComponent(storeSlug.value)}`,
-    )
-
-    const session = await $fetch<{ customer: Member | null }>(
-      `/api/customer/me?slug=${encodeURIComponent(storeSlug.value)}`,
-    )
-
-    if (session.customer) {
-      member.value = session.customer
-      return
-    }
-
-    if (storeInfo.value.lineEnabled && storeInfo.value.liffId) {
-      try {
-        await tryLiffLogin(true)
-      }
-      catch (err) {
-        error.value = fetchErrorMessage(err, 'เข้าสู่ระบบด้วย LINE ไม่สำเร็จ')
-      }
+    const started = await tryLiffLogin(true)
+    if (!member.value && !started) {
+      error.value = 'เข้าสู่ระบบด้วย LINE ไม่สำเร็จ กรุณาลองอีกครั้ง'
+      sessionStorage.removeItem(LIFF_LOGIN_GUARD)
     }
   }
   catch (err) {
-    error.value = fetchErrorMessage(err, 'โหลดหน้าร้านไม่สำเร็จ')
+    error.value = fetchErrorMessage(err, 'เข้าสู่ระบบด้วย LINE ไม่สำเร็จ')
+    sessionStorage.removeItem(LIFF_LOGIN_GUARD)
   }
   finally {
-    loading.value = false
+    if (member.value || error.value) {
+      resolvingLineSession.value = false
+      pendingLineLogin.value = false
+    }
   }
 }
 
+const { data: storeInfo, error: storeFetchError } = await useFetch<PublicStore>(
+  () => `/api/public/store/${encodeURIComponent(storeSlug.value)}`,
+)
+
+const { data: sessionPayload } = await useFetch<{ customer: Member | null }>(
+  () => `/api/customer/me?slug=${encodeURIComponent(storeSlug.value)}`,
+)
+
+const lineBusy = computed(() => {
+  return !member.value && (resolvingLineSession.value || pendingLineLogin.value)
+})
+const showLogin = computed(() => {
+  return Boolean(storeInfo.value && !member.value && !lineBusy.value)
+})
+const lineStartHref = computed(() => {
+  return storeInfo.value?.liffUrl || `https://liff.line.me/${storeInfo.value?.liffId || ''}`
+})
+
+watch(sessionPayload, (value) => {
+  if (value?.customer) {
+    member.value = value.customer
+  }
+}, { immediate: true })
+
+watch(storeFetchError, (err) => {
+  if (err) {
+    error.value = fetchErrorMessage(err, 'โหลดหน้าร้านไม่สำเร็จ')
+  }
+}, { immediate: true })
+
 onMounted(() => {
-  void bootstrap()
+  void bootstrapLiff()
 })
 </script>
 
@@ -252,9 +336,9 @@ onMounted(() => {
             <button
               class="member-theme-toggle"
               type="button"
+              data-theme-toggle
               :aria-label="theme === 'light' ? 'เปลี่ยนเป็นธีมมืด' : 'เปลี่ยนเป็นธีมสว่าง'"
               :title="themeLabel"
-              @click="toggleTheme"
             >
               <AppIcon :name="theme === 'light' ? 'moon' : 'sun'" :size="16" />
               <span>{{ theme === 'light' ? 'ธีมมืด' : 'ธีมสว่าง' }}</span>
@@ -262,22 +346,26 @@ onMounted(() => {
           </div>
           <h1>{{ storeInfo?.store.name || 'หน้าสมาชิกร้าน' }}</h1>
 
-          <p
-            v-if="loading"
-            class="member-probe__muted"
+          <div
+            v-if="lineBusy"
+            class="member-loading"
+            role="status"
+            aria-live="polite"
           >
-            กำลังโหลด…
-          </p>
+            <span class="member-loading__spinner" aria-hidden="true" />
+            <p>กำลังเข้าสู่ระบบด้วย LINE</p>
+            <small>รอสักครู่ ระบบกำลังยืนยันตัวตน</small>
+          </div>
 
           <p
-            v-if="!loading && error"
+            v-if="!lineBusy && error"
             class="member-probe__error"
             role="alert"
           >
             {{ error }}
           </p>
 
-          <template v-if="!loading && member">
+          <template v-if="!lineBusy && member">
             <div class="member-probe__profile">
               <img
                 v-if="member.pictureUrl"
@@ -317,27 +405,27 @@ onMounted(() => {
             </button>
           </template>
 
-          <template v-else-if="!loading && storeInfo && !storeInfo.lineEnabled && !storeInfo.otpEnabled">
+          <template v-else-if="showLogin && !storeInfo.lineEnabled && !storeInfo.otpEnabled">
             <p class="member-probe__muted">
               ร้านนี้ยังไม่เปิดรับสมาชิก
             </p>
           </template>
 
-          <template v-else-if="!loading && storeInfo && !member">
+          <template v-else-if="showLogin">
             <p class="member-probe__muted">
               เข้าสู่ระบบเพื่อสะสมแต้มกับร้านนี้
             </p>
 
             <div class="member-login">
-              <button
+              <a
                 v-if="storeInfo.lineEnabled"
                 class="button member-login__line"
-                type="button"
-                @click="startLineLogin"
+                :href="lineStartHref"
+                @click="onLineLoginClick"
               >
                 <AppIcon name="line" :size="18" />
-                เข้าสู่ระบบด้วย LINE
-              </button>
+                {{ pendingLineLogin ? 'กำลังเปิด LINE…' : 'เข้าสู่ระบบด้วย LINE' }}
+              </a>
 
               <form
                 v-if="storeInfo.otpEnabled"

@@ -9,7 +9,7 @@ type AuthUser = {
 
 const route = useRoute()
 const authUser = useState<AuthUser | null>('auth:user', () => null)
-const { theme, themeLabel, toggleTheme } = useAppTheme()
+const { theme, themeLabel } = useAppTheme()
 const sidebarOpen = ref(false)
 const loggingOut = ref(false)
 
@@ -27,7 +27,8 @@ async function logout() {
   try {
     await $fetch('/api/auth/logout', { method: 'POST' })
     authUser.value = null
-    await navigateTo('/login')
+    storeOnboarded.value = false
+    await navigateTo('/')
   } finally {
     loggingOut.value = false
   }
@@ -135,9 +136,9 @@ watch(() => route.fullPath, () => {
         <button
           class="icon-button"
           type="button"
+          data-theme-toggle
           :aria-label="theme === 'light' ? 'เปลี่ยนเป็นธีมมืด' : 'เปลี่ยนเป็นธีมสว่าง'"
           :title="themeLabel"
-          @click="toggleTheme"
         >
           <AppIcon :name="theme === 'light' ? 'moon' : 'sun'" />
         </button>

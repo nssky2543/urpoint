@@ -77,11 +77,14 @@ button {
   background: transparent;
   color: inherit;
   font-weight: 700;
-  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 
-.button:hover {
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .button:hover {
+    transform: translateY(-2px);
+    transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
+  }
 }
 
 .button--primary {
@@ -1563,9 +1566,155 @@ button {
 
 .line-external {
   display: inline-flex;
-  margin-top: 8px;
+  margin: 8px 18px 0 0;
   color: var(--orange-600);
   font-weight: 700;
+}
+
+.line-guide {
+  margin: 18px 0 4px;
+  border: 1px dashed rgb(255 107 26 / 35%);
+  border-radius: 16px;
+  background: rgb(255 107 26 / 6%);
+}
+
+.line-guide summary {
+  display: grid;
+  gap: 2px;
+  padding: 14px 56px 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+}
+
+.line-guide summary::-webkit-details-marker {
+  display: none;
+}
+
+.line-guide summary::after {
+  content: 'แสดง';
+  position: absolute;
+  right: 16px;
+  top: 18px;
+  color: var(--orange-600);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.line-guide {
+  position: relative;
+}
+
+.line-guide[open] summary::after {
+  content: 'ซ่อน';
+}
+
+.line-primer {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--dash-line);
+  border-radius: 16px;
+  background: var(--dash-panel);
+}
+
+.line-primer h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.line-primer p,
+.line-primer li {
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.line-primer ol {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.line-primer li + li {
+  margin-top: 6px;
+}
+
+.line-guide__kicker {
+  color: var(--orange-600);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.line-guide__intro {
+  margin: 0 16px 12px;
+  color: var(--dash-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.line-guide summary strong {
+  padding-right: 48px;
+  font-size: 15px;
+}
+
+.line-guide__steps {
+  margin: 0;
+  padding: 0 16px 14px 36px;
+}
+
+.line-guide__steps li {
+  margin-bottom: 8px;
+  color: var(--dash-text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.line-guide__steps li p {
+  margin: 0 0 10px;
+}
+
+.line-guide__shot {
+  margin: 0 0 18px;
+  overflow: hidden;
+  border: 1px solid var(--dash-line);
+  border-radius: 14px;
+  background: #eef1f3;
+}
+
+.line-guide__shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.line-guide__shot figcaption {
+  margin: 0;
+  padding: 10px 12px 12px;
+  color: var(--dash-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.line-guide__sample {
+  display: grid;
+  gap: 4px;
+  margin: 0 16px 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--dash-panel);
+}
+
+.line-guide__sample span {
+  color: var(--dash-muted);
+  font-size: 12px;
+}
+
+.line-guide__sample code {
+  overflow-wrap: anywhere;
+  color: var(--dash-text);
+  font-size: 13px;
 }
 
 .line-copy-list {
@@ -2042,6 +2191,46 @@ button {
   color: var(--member-logout-text);
 }
 
+.member-loading {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 18px 0 8px;
+  padding: 28px 16px;
+  border: 1px solid var(--member-soft-border);
+  border-radius: 18px;
+  background: var(--member-soft);
+  text-align: center;
+}
+
+.member-loading p {
+  margin: 0;
+  color: var(--member-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.member-loading small {
+  color: var(--member-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.member-loading__spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--member-soft-border);
+  border-top-color: var(--member-accent);
+  border-radius: 50%;
+  animation: member-spin .8s linear infinite;
+}
+
+@keyframes member-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .member-login {
   display: grid;
   gap: 16px;
@@ -2326,9 +2515,25 @@ button {
   font-weight: 600;
 }
 
-.settings-form__submit {
+.settings-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 8px;
+}
+
+.settings-form__submit,
+.settings-form__logout {
+  flex: 1 1 200px;
+  margin: 0;
+}
+
+.settings-form__submit {
   border: 0;
+}
+
+.settings-form__logout-hint {
+  margin-top: 4px;
 }
 
 .settings-toggle {

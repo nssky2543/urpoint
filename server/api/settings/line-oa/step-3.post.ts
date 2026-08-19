@@ -8,6 +8,7 @@ import {
   getMessagingWebhook,
   normalizeChannelId,
   normalizeOptionalSecret,
+  resolvePublicBaseUrlFromEvent,
   verifyLineChannelAccessToken,
 } from '../../../utils/line'
 import { decryptSecret, encryptSecret } from '../../../utils/line-crypto'
@@ -63,6 +64,7 @@ export default defineEventHandler(async (event) => {
     storeSlug: store.slug,
     webhookKey: row.webhookKey,
     liffId: row.liffId,
+    baseUrl: resolvePublicBaseUrlFromEvent(event),
   }).webhookUrl
 
   let result: Awaited<ReturnType<typeof configureMessagingChannel>>
@@ -119,5 +121,5 @@ export default defineEventHandler(async (event) => {
     .where(eq(storeLineConnections.storeId, store.id))
     .returning()
 
-  return toPublicLineSettings(store, updated!)
+  return toPublicLineSettings(store, updated!, event)
 })

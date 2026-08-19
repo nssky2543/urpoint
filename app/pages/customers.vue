@@ -22,11 +22,24 @@ type CustomerRow = {
   lastSeenAt: string
 }
 
-const loading = ref(true)
-const errorMessage = ref('')
-const customers = ref<CustomerRow[]>([])
-const total = ref(0)
-const memberUrl = ref('')
+const toast = useAppToast()
+
+const { data, status, error: customersError, refresh } = await useFetch<{
+  customers: CustomerRow[]
+  total: number
+  memberUrl: string
+}>('/api/customers')
+
+const loading = computed(() => status.value === 'pending')
+const customers = computed(() => data.value?.customers ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const memberUrl = computed(() => data.value?.memberUrl ?? '')
+const errorMessage = computed(() => {
+  if (!customersError.value) return ''
+  return customersError.value instanceof Error
+    ? customersError.value.message
+    : 'โหลดรายชื่อลูกค้าไม่สำเร็จ'
+})
 const copied = ref(false)
 const pointsTarget = ref<CustomerRow | null>(null)
 const pointsDelta = ref(10)
@@ -34,7 +47,6 @@ const pointsReason = ref('')
 const pointsMode = ref<'add' | 'subtract'>('add')
 const pointsPending = ref(false)
 const pointsError = ref('')
-const toast = useAppToast()
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('th-TH', {
@@ -58,38 +70,18 @@ function methodLabel(customer: CustomerRow) {
 
 async function copyMemberLink() {
   if (!memberUrl.value) return
-  await navigator.clipboard.writeText(memberUrl.value)
+  try {
+    await navigator.clipboard.writeText(memberUrl.value)
+  }
+  catch {
+    window.prompt('คัดลอกลิงก์สมาชิก', memberUrl.value)
+    return
+  }
   copied.value = true
   toast.success('คัดลอกลิงก์สมาชิกแล้ว', 'คัดลอก')
   window.setTimeout(() => {
     copied.value = false
   }, 1600)
-}
-
-async function loadCustomers() {
-  loading.value = true
-  errorMessage.value = ''
-
-  try {
-    const data = await $fetch<{
-      customers: CustomerRow[]
-      total: number
-      memberUrl: string
-    }>('/api/customers')
-
-    customers.value = data.customers
-    total.value = data.total
-    memberUrl.value = data.memberUrl
-  }
-  catch (error) {
-    errorMessage.value = error instanceof Error
-      ? error.message
-      : 'โหลดรายชื่อลูกค้าไม่สำเร็จ'
-    toast.error(errorMessage.value)
-  }
-  finally {
-    loading.value = false
-  }
 }
 
 function openPoints(customer: CustomerRow, mode: 'add' | 'subtract') {
@@ -113,7 +105,7 @@ async function submitPoints() {
   const delta = pointsMode.value === 'add' ? pointsDelta.value : -pointsDelta.value
 
   try {
-    const data = await $fetch<{ customer: CustomerRow }>(
+    await $fetch<{ customer: CustomerRow }>(
       `/api/customers/${pointsTarget.value.id}/points`,
       {
         method: 'POST',
@@ -123,9 +115,7 @@ async function submitPoints() {
         },
       },
     )
-    customers.value = customers.value.map(row =>
-      row.id === data.customer.id ? data.customer : row,
-    )
+    await refresh()
     toast.success(
       pointsMode.value === 'add' ? 'เพิ่มแต้มเรียบร้อยแล้ว' : 'ลดแต้มเรียบร้อยแล้ว',
     )
@@ -145,10 +135,6 @@ async function submitPoints() {
     pointsPending.value = false
   }
 }
-
-onMounted(() => {
-  void loadCustomers()
-})
 </script>
 
 <template>

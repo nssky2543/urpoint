@@ -6,6 +6,7 @@ import {
   buildLineUrls,
   exchangeLineLoginCode,
   verifyLineIdToken,
+  resolvePublicBaseUrlFromEvent,
 } from '../../utils/line'
 import { decryptSecret } from '../../utils/line-crypto'
 import { upsertStoreCustomerByLine } from '../../utils/store-customers'
@@ -70,11 +71,14 @@ export default defineEventHandler(async (event) => {
     storeSlug: row.store.slug,
     webhookKey: row.connection.webhookKey,
     liffId: row.connection.liffId,
+    baseUrl: resolvePublicBaseUrlFromEvent(event),
   })
+  const redirectUri = getCookie(event, 'urpoint_line_redirect') || urls.callbackUrl
+  deleteCookie(event, 'urpoint_line_redirect', { path: '/' })
 
   const tokens = await exchangeLineLoginCode({
     code,
-    redirectUri: urls.callbackUrl,
+    redirectUri,
     channelId: row.connection.loginChannelId,
     channelSecret: decryptSecret(row.connection.loginChannelSecretEnc),
     codeVerifier: oauth.codeVerifier,

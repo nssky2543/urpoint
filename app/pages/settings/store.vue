@@ -34,7 +34,6 @@ type StoreSettings = {
 }
 
 const storeOnboarded = useState<boolean>('store:onboarded', () => false)
-const loading = ref(true)
 const pending = ref(false)
 const errorMessage = ref('')
 const isOnboarding = ref(false)
@@ -74,35 +73,49 @@ const heading = computed(() => isOnboarding.value
 
 const lineLoginLocked = computed(() => !canEnableLineLogin(lineActive.value))
 const toast = useAppToast()
+const authUser = useState('auth:user')
+const loggingOut = ref(false)
 
-async function loadSettings() {
-  loading.value = true
-  errorMessage.value = ''
-
+async function logout() {
+  loggingOut.value = true
   try {
-    const data = await $fetch<StoreSettings>('/api/settings/store')
-    form.name = data.store.name === 'ร้านของคุณ' ? '' : data.store.name
-    form.phone = data.store.phone || ''
-    form.slug = data.store.slug
-    form.businessType = data.store.businessType
-    form.staffBookingEnabled = data.store.staffBookingEnabled
-    form.customerLoginLineEnabled = data.store.customerLoginLineEnabled
-    form.customerLoginOtpEnabled = data.store.customerLoginOtpEnabled
-    isOnboarding.value = !data.store.onboarded
-    storeOnboarded.value = data.store.onboarded
-    lineActive.value = data.lineActive
-    liffUrl.value = data.store.liffUrl
-  }
-  catch (error) {
-    errorMessage.value = error instanceof Error
-      ? error.message
-      : 'โหลดข้อมูลร้านไม่สำเร็จ'
-    toast.error(errorMessage.value)
+    await $fetch('/api/auth/logout', { method: 'POST' })
+    authUser.value = null
+    storeOnboarded.value = false
+    await navigateTo('/')
   }
   finally {
-    loading.value = false
+    loggingOut.value = false
   }
 }
+
+function applySettings(data: StoreSettings) {
+  form.name = data.store.name === 'ร้านของคุณ' ? '' : data.store.name
+  form.phone = data.store.phone || ''
+  form.slug = data.store.slug
+  form.businessType = data.store.businessType
+  form.staffBookingEnabled = data.store.staffBookingEnabled
+  form.customerLoginLineEnabled = data.store.customerLoginLineEnabled
+  form.customerLoginOtpEnabled = data.store.customerLoginOtpEnabled
+  isOnboarding.value = !data.store.onboarded
+  storeOnboarded.value = data.store.onboarded
+  lineActive.value = data.lineActive
+  liffUrl.value = data.store.liffUrl
+}
+
+const { data, status, error: settingsError, refresh } = await useFetch<StoreSettings>('/api/settings/store')
+
+watch(data, (value) => {
+  if (value) applySettings(value)
+}, { immediate: true })
+
+const loading = computed(() => status.value === 'pending')
+
+watch(settingsError, (err) => {
+  if (!err) return
+  errorMessage.value = err instanceof Error ? err.message : 'โหลดข้อมูลร้านไม่สำเร็จ'
+  toast.error(errorMessage.value)
+}, { immediate: true })
 
 function onBusinessTypeChange() {
   form.staffBookingEnabled = defaultStaffBookingEnabled(form.businessType)
@@ -158,7 +171,13 @@ async function checkSlug() {
 }
 
 async function copyLink(value: string, key: string) {
-  await navigator.clipboard.writeText(value)
+  try {
+    await navigator.clipboard.writeText(value)
+  }
+  catch {
+    window.prompt('คัดลอกลิงก์สมาชิก', value)
+    return
+  }
   copied.value = key
   toast.success('คัดลอกลิงก์แล้ว', 'คัดลอก')
   window.setTimeout(() => {
@@ -194,6 +213,9 @@ async function saveSettings() {
     if (isOnboarding.value) {
       await navigateTo('/dashboard')
     }
+    else {
+      await refresh()
+    }
   }
   catch (error) {
     const fetchError = error as {
@@ -209,10 +231,6 @@ async function saveSettings() {
     pending.value = false
   }
 }
-
-onMounted(() => {
-  void loadSettings()
-})
 </script>
 
 <template>
@@ -432,13 +450,31 @@ onMounted(() => {
             {{ errorMessage }}
           </p>
 
-          <button
-            class="button button--dark settings-form__submit"
-            type="submit"
-            :disabled="pending"
+          <div class="settings-form__actions">
+            <button
+              class="button button--dark settings-form__submit"
+              type="submit"
+              :disabled="pending || loggingOut"
+            >
+              {{ pending ? 'กำลังบันทึก…' : isOnboarding ? 'บันทึกแล้วไป Dashboard' : 'บันทึกการตั้งค่า' }}
+            </button>
+            <button
+              v-if="isOnboarding"
+              class="button button--ghost settings-form__logout"
+              type="button"
+              :disabled="pending || loggingOut"
+              @click="logout"
+            >
+              <AppIcon name="logout" :size="16" />
+              {{ loggingOut ? 'กำลังออก…' : 'ออกจากระบบ' }}
+            </button>
+          </div>
+          <p
+            v-if="isOnboarding"
+            class="form-hint settings-form__logout-hint"
           >
-            {{ pending ? 'กำลังบันทึก…' : isOnboarding ? 'บันทึกแล้วไป Dashboard' : 'บันทึกการตั้งค่า' }}
-          </button>
+            ยังไม่พร้อมตั้งค่าตอนนี้? ออกจากระบบเพื่อกลับไปดูหน้าแรกได้
+          </p>
         </form>
       </div>
     </section>

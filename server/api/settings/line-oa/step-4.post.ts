@@ -5,6 +5,7 @@ import {
   buildLineUrls,
   fetchBotInfo,
   getMessagingWebhook,
+  resolvePublicBaseUrlFromEvent,
   verifyLineChannelAccessToken,
 } from '../../../utils/line'
 import { decryptSecret } from '../../../utils/line-crypto'
@@ -31,6 +32,7 @@ export default defineEventHandler(async (event) => {
     storeSlug: store.slug,
     webhookKey: row.webhookKey,
     liffId: row.liffId,
+    baseUrl: resolvePublicBaseUrlFromEvent(event),
   }).webhookUrl
 
   await verifyLineChannelAccessToken(accessToken, row.messagingChannelId)
@@ -69,5 +71,5 @@ export default defineEventHandler(async (event) => {
     .where(eq(storeLineConnections.storeId, store.id))
     .returning()
 
-  return toPublicLineSettings(store, updated!)
+  return toPublicLineSettings(store, updated!, event)
 })

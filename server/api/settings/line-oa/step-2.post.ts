@@ -6,6 +6,7 @@ import {
   getLiffApp,
   issueLineChannelAccessToken,
   normalizeLiffId,
+  resolvePublicBaseUrlFromEvent,
   upsertLiffApp,
 } from '../../../utils/line'
 import { decryptSecret } from '../../../utils/line-crypto'
@@ -37,6 +38,7 @@ export default defineEventHandler(async (event) => {
     storeSlug: store.slug,
     webhookKey: row.webhookKey,
     liffId,
+    baseUrl: resolvePublicBaseUrlFromEvent(event),
   })
   let verifiedLiffId = liffId
   if (liffId) {
@@ -73,5 +75,5 @@ export default defineEventHandler(async (event) => {
     .where(eq(storeLineConnections.storeId, store.id))
     .returning()
 
-  return toPublicLineSettings(store, updated!)
+  return toPublicLineSettings(store, updated!, event)
 })

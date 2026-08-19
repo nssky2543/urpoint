@@ -19,5 +19,5 @@ export default defineEventHandler(async (event) => {
     row = created!
   }
 
-  return toPublicLineSettings(store, row)
+  return toPublicLineSettings(store, row, event)
 })

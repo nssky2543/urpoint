@@ -6,6 +6,7 @@ import {
   createOauthNonce,
   createOauthState,
   createPkcePair,
+  resolvePublicBaseUrlFromEvent,
 } from '../../../utils/line'
 import { decryptSecret } from '../../../utils/line-crypto'
 import { getStoreLineConnection } from '../../../utils/line-settings'
@@ -38,6 +39,7 @@ export default defineEventHandler(async (event) => {
     storeSlug: store.slug,
     webhookKey: row.webhookKey,
     liffId: row.liffId,
+    baseUrl: resolvePublicBaseUrlFromEvent(event),
   })
 
   await useDb().insert(lineOauthStates).values({
@@ -47,6 +49,14 @@ export default defineEventHandler(async (event) => {
     codeVerifier,
     nonce,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+  })
+
+  setCookie(event, 'urpoint_line_redirect', urls.callbackUrl, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: urls.callbackUrl.startsWith('https'),
+    maxAge: 10 * 60,
+    path: '/',
   })
 
   return sendRedirect(event, buildAuthorizeUrl({

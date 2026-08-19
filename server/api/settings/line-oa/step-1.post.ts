@@ -55,5 +55,5 @@ export default defineEventHandler(async (event) => {
     .where(eq(storeLineConnections.storeId, store.id))
     .returning()
 
-  return toPublicLineSettings(store, updated!)
+  return toPublicLineSettings(store, updated!, event)
 })
