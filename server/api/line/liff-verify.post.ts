@@ -3,8 +3,38 @@ import { effectiveCustomerLoginMethods } from '#shared/utils/customer-login'
 import { useDb } from '../../database/client'
 import { stores, storeLineConnections } from '../../database/schema'
 import { createCustomerSession } from '../../utils/customer-session'
-import { verifyLineIdToken } from '../../utils/line'
+import {
+  channelIdFromLiffId,
+  peekLineIdTokenClaims,
+  verifyLineIdToken,
+} from '../../utils/line'
 import { toPublicStoreCustomer, upsertStoreCustomerByLine } from '../../utils/store-customers'
+
+async function verifyWithChannelCandidates(input: {
+  idToken: string
+  channelIds: string[]
+}) {
+  const unique = [...new Set(input.channelIds.map(id => id.trim()).filter(Boolean))]
+  let lastError: unknown
+
+  for (const channelId of unique) {
+    try {
+      return await verifyLineIdToken({
+        idToken: input.idToken,
+        channelId,
+      })
+    }
+    catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError || createError({
+    statusCode: 400,
+    statusMessage: 'Bad Request',
+    message: 'ยืนยัน LINE ID token ไม่สำเร็จ',
+  })
+}
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -14,7 +44,8 @@ export default defineEventHandler(async (event) => {
   if (!storeSlug || !idToken) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'ต้องส่ง storeSlug และ idToken',
+      statusMessage: 'Bad Request',
+      message: 'ต้องส่ง storeSlug และ idToken',
     })
   }
 
@@ -31,7 +62,8 @@ export default defineEventHandler(async (event) => {
   if (!row?.connection.loginChannelId || !row.connection.isActive) {
     throw createError({
       statusCode: 404,
-      statusMessage: 'ร้านนี้ยังไม่เปิดใช้งาน LINE',
+      statusMessage: 'Not Found',
+      message: 'ร้านนี้ยังไม่เปิดใช้งาน LINE',
     })
   }
 
@@ -44,13 +76,26 @@ export default defineEventHandler(async (event) => {
   if (!methods.lineEnabled) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'ร้านนี้ยังไม่เปิดเข้าสู่ระบบด้วย LINE',
+      statusMessage: 'Bad Request',
+      message: 'ร้านนี้ยังไม่เปิดเข้าสู่ระบบด้วย LINE',
     })
   }
 
-  const identity = await verifyLineIdToken({
+  const claims = peekLineIdTokenClaims(idToken)
+  const channelCandidates = [
+    row.connection.loginChannelId,
+    channelIdFromLiffId(row.connection.liffId),
+    claims?.aud || '',
+  ].filter((id) => {
+    if (!id) return false
+    // Only accept aud that belongs to this store's known channels.
+    return id === row.connection.loginChannelId
+      || id === channelIdFromLiffId(row.connection.liffId)
+  })
+
+  const identity = await verifyWithChannelCandidates({
     idToken,
-    channelId: row.connection.loginChannelId,
+    channelIds: channelCandidates,
   })
 
   const { customer, isNew } = await upsertStoreCustomerByLine({

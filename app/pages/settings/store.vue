@@ -63,12 +63,14 @@ const heading = computed(() => isOnboarding.value
   ? {
       eyebrow: 'WELCOME',
       title: 'ตั้งค่าร้านครั้งแรก',
-      desc: 'กรอกข้อมูลร้านให้ครบ แล้วกดบันทึกเพื่อเข้าใช้งาน Dashboard',
+      sectionTitle: 'ข้อมูลร้าน',
+      description: 'กรอกข้อมูลร้านให้ครบ แล้วกดบันทึกเพื่อเข้าใช้งาน Dashboard',
     }
   : {
       eyebrow: 'STORE SETTINGS',
       title: 'ตั้งค่าร้าน',
-      desc: 'ข้อมูลร้าน ประเภทธุรกิจ และวิธีเข้าสู่ระบบของลูกค้า',
+      sectionTitle: 'ข้อมูลร้าน',
+      description: 'ตั้งชื่อร้าน ประเภทธุรกิจ และรายละเอียดพื้นฐาน เพื่อใช้กับระบบ CRM และการจองในอนาคต',
     })
 
 const lineLoginLocked = computed(() => !canEnableLineLogin(lineActive.value))
@@ -235,31 +237,14 @@ async function saveSettings() {
 
 <template>
   <div class="page-wrap">
-    <div class="page-heading">
-      <div>
-        <p class="page-heading__eyebrow">
-          {{ heading.eyebrow }}
-        </p>
-        <h1>{{ heading.title }}</h1>
-      </div>
-      <p class="page-heading__desc">
-        {{ heading.desc }}
-      </p>
-    </div>
+    <SettingsPageHeader
+      :eyebrow="heading.eyebrow"
+      :title="heading.title"
+      :section-title="heading.sectionTitle"
+      :description="heading.description"
+    />
 
-    <section class="settings-panel settings-panel--form">
-      <aside class="settings-panel__aside">
-        <span class="settings-panel__aside-icon">
-          <AppIcon name="store" :size="27" />
-        </span>
-        <h2>ข้อมูลร้าน</h2>
-        <p>
-          ตั้งชื่อร้าน ประเภทธุรกิจ และรายละเอียดพื้นฐาน
-          เพื่อใช้กับระบบ CRM และการจองในอนาคต
-        </p>
-      </aside>
-
-      <div class="settings-panel__content settings-panel__content--form">
+    <SettingsPanel>
         <p
           v-if="loading"
           class="settings-form__muted"
@@ -476,7 +461,6 @@ async function saveSettings() {
             ยังไม่พร้อมตั้งค่าตอนนี้? ออกจากระบบเพื่อกลับไปดูหน้าแรกได้
           </p>
         </form>
-      </div>
-    </section>
+    </SettingsPanel>
   </div>
 </template>

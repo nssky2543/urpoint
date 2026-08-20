@@ -27,6 +27,12 @@ NUXT_PUBLIC_APP_URL=http://localhost:3000
 NUXT_LINE_CREDENTIAL_KEY=<64-hex-chars>
 NUXT_GOOGLE_CLIENT_ID=<google-oauth-client-id>
 NUXT_GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+NUXT_S3_ENDPOINT=http://127.0.0.1:9000
+NUXT_S3_REGION=us-east-1
+NUXT_S3_ACCESS_KEY_ID=urpoint
+NUXT_S3_SECRET_ACCESS_KEY=urpoint_minio_dev
+NUXT_S3_BUCKET=urpoint
+NUXT_S3_FORCE_PATH_STYLE=true
 ```
 
 Generate the credential key:
@@ -56,7 +62,7 @@ Existing username/password accounts cannot sign in anymore. Sign up again with G
 ## Database
 
 ```bash
-# start
+# start Postgres + MinIO (local S3)
 docker compose up -d
 
 # ready check
@@ -69,6 +75,10 @@ bun run db:migrate
 docker compose down
 ```
 
+MinIO API: http://127.0.0.1:9000  
+MinIO Console: http://127.0.0.1:9001 (login with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`)
+
+Object storage is used for custom Rich Menu images. Point `NUXT_S3_*` at MinIO locally, or at a real S3-compatible endpoint in production.
 ## Development
 
 ```bash

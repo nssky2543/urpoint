@@ -8,16 +8,23 @@ import {
 } from './line-crypto'
 import {
   buildLineUrls,
+  buildLineRichMenuObject,
   computeConnectionCompleteness,
   configureMessagingChannel,
   createPkcePair,
+  createRichMenu,
   getLiffApp,
   issueLineChannelAccessToken,
   normalizeChannelId,
   normalizeLiffId,
   normalizeOptionalSecret,
+  channelIdFromLiffId,
+  peekLineIdTokenClaims,
   resolvePublicBaseUrl,
+  setDefaultRichMenu,
+  uploadRichMenuImage,
   upsertLiffApp,
+  validateRichMenu,
   verifyLineChannelAccessToken,
 } from './line'
 import {
@@ -302,8 +309,23 @@ describe('line helpers', () => {
 
   test('normalizes channel inputs and optional secrets', () => {
     expect(normalizeChannelId('  2010909643  ')).toBe('2010909643')
+    expect(normalizeLiffId('https://liff.line.me/2010909637-Ngw5nvws')).toBe('2010909637-Ngw5nvws')
     expect(normalizeOptionalSecret('   ')).toBeNull()
     expect(normalizeOptionalSecret('keep-me')).toBe('keep-me')
+    expect(channelIdFromLiffId('2010909637-Ngw5nvws')).toBe('2010909637')
+    expect(channelIdFromLiffId('https://liff.line.me/2010909637-Ngw5nvws')).toBe('2010909637')
+    expect(channelIdFromLiffId('bad')).toBe('')
+
+    const token = [
+      Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url'),
+      Buffer.from(JSON.stringify({ aud: '2010909637', exp: 1, sub: 'U123' })).toString('base64url'),
+      'sig',
+    ].join('.')
+    expect(peekLineIdTokenClaims(token)).toEqual({
+      aud: '2010909637',
+      exp: 1,
+      sub: 'U123',
+    })
   })
 
   test('creates PKCE verifier and challenge', () => {
@@ -340,5 +362,42 @@ describe('line helpers', () => {
       webhookVerifiedAt: new Date(),
     })
     expect(complete.complete).toBe(true)
+  })
+
+  test('builds and publishes a rich menu through Messaging API helpers', async () => {
+    const richMenu = buildLineRichMenuObject({
+      name: 'เมนูร้าน',
+      chatBarText: 'เมนู',
+      layout: 'two',
+      slots: [
+        { label: 'หน้าแรก', uri: 'https://example.com/m/demo', showLabel: true },
+        { label: 'ติดต่อ', uri: 'tel:0812345678', showLabel: true },
+      ],
+    })
+
+    expect(richMenu.areas).toHaveLength(2)
+    expect(richMenu.size).toEqual({ width: 2500, height: 843 })
+
+    const requests: Array<{ url: string, method?: string }> = []
+    const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), method: init?.method })
+      if (String(url).endsWith('/richmenu') && init?.method === 'POST') {
+        return Response.json({ richMenuId: 'richmenu-1' })
+      }
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    await validateRichMenu('token', richMenu, fetchFn)
+    const created = await createRichMenu('token', richMenu, fetchFn)
+    await uploadRichMenuImage('token', created.richMenuId, Buffer.from('png'), 'image/png', fetchFn)
+    await setDefaultRichMenu('token', created.richMenuId, fetchFn)
+
+    expect(created.richMenuId).toBe('richmenu-1')
+    expect(requests.map(item => `${item.method} ${item.url}`)).toEqual([
+      'POST https://api.line.me/v2/bot/richmenu/validate',
+      'POST https://api.line.me/v2/bot/richmenu',
+      'POST https://api-data.line.me/v2/bot/richmenu/richmenu-1/content',
+      'POST https://api.line.me/v2/bot/user/all/richmenu/richmenu-1',
+    ])
   })
 })

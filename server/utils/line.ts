@@ -4,6 +4,13 @@ import {
 } from 'node:crypto'
 import { getRequestHeader } from 'h3'
 import type { H3Event } from 'h3'
+import {
+  normalizeRichMenuSlots,
+  richMenuBoundsForLayout,
+  richMenuCanvasSize,
+  type RichMenuLayout,
+  type RichMenuSlot,
+} from '../../shared/utils/rich-menu'
 
 export type LineBotInfo = {
   userId: string
@@ -120,6 +127,34 @@ export function normalizeLiffId(value: unknown) {
   }
 
   return trimmed
+}
+
+/** LINE Login Channel ID is the numeric prefix of a LIFF ID (e.g. 123-abc → 123). */
+export function channelIdFromLiffId(liffId: string | null | undefined) {
+  const normalized = normalizeLiffId(liffId || '')
+  const prefix = normalized.split('-')[0] || ''
+  return /^\d{5,}$/.test(prefix) ? prefix : ''
+}
+
+export function peekLineIdTokenClaims(idToken: string) {
+  try {
+    const payload = idToken.split('.')[1]
+    if (!payload) {
+      return null
+    }
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const json = Buffer.from(padded, 'base64').toString('utf8')
+    const claims = JSON.parse(json) as { aud?: string, exp?: number, sub?: string }
+    return {
+      aud: typeof claims.aud === 'string' ? claims.aud : '',
+      exp: typeof claims.exp === 'number' ? claims.exp : 0,
+      sub: typeof claims.sub === 'string' ? claims.sub : '',
+    }
+  }
+  catch {
+    return null
+  }
 }
 
 export function normalizeOptionalSecret(value: unknown) {
@@ -508,9 +543,25 @@ export async function verifyLineIdToken(input: {
   })
 
   if (!response.ok) {
+    const result = await readResponseJson<{ error?: string, error_description?: string }>(response)
+    const detail = result?.error_description || result?.error || ''
+    const claims = peekLineIdTokenClaims(input.idToken)
+    const hint = claims?.aud && claims.aud !== input.channelId
+      ? ` (token aud=${claims.aud}, client_id=${input.channelId})`
+      : ''
+    console.warn('[line] id token verify failed', {
+      status: response.status,
+      detail,
+      channelId: input.channelId,
+      tokenAud: claims?.aud || null,
+      tokenExp: claims?.exp || null,
+    })
     throw createError({
       statusCode: 400,
-      statusMessage: 'ยืนยัน LINE ID token ไม่สำเร็จ',
+      statusMessage: 'Bad Request',
+      message: detail
+        ? `ยืนยัน LINE ID token ไม่สำเร็จ: ${detail}${hint}`
+        : `ยืนยัน LINE ID token ไม่สำเร็จ${hint}`,
     })
   }
 
@@ -552,4 +603,187 @@ export function computeConnectionCompleteness(input: {
   const step4 = Boolean(step1 && step2 && step3)
 
   return { step1, step2, step3, step4, complete: step4 }
+}
+
+export type LineRichMenuObject = {
+  size: { width: number, height: number }
+  selected: boolean
+  name: string
+  chatBarText: string
+  areas: Array<{
+    bounds: { x: number, y: number, width: number, height: number }
+    action: { type: 'uri', uri: string, label?: string }
+  }>
+}
+
+export function buildLineRichMenuObject(input: {
+  name: string
+  chatBarText: string
+  layout: RichMenuLayout
+  slots: RichMenuSlot[]
+}): LineRichMenuObject {
+  const size = richMenuCanvasSize(input.layout)
+  const bounds = richMenuBoundsForLayout(input.layout)
+  const slots = normalizeRichMenuSlots(input.layout, input.slots)
+
+  return {
+    size,
+    selected: true,
+    name: input.name.trim().slice(0, 300),
+    chatBarText: input.chatBarText.trim().slice(0, 14),
+    areas: bounds.map((box, index) => ({
+      bounds: box,
+      action: {
+        type: 'uri' as const,
+        uri: slots[index]?.uri || 'https://line.me',
+        label: (slots[index]?.label || `ช่อง ${index + 1}`).slice(0, 20),
+      },
+    })),
+  }
+}
+
+export async function validateRichMenu(
+  accessToken: string,
+  richMenu: LineRichMenuObject,
+  fetchFn: typeof fetch = fetch,
+) {
+  const response = await fetchFn('https://api.line.me/v2/bot/richmenu/validate', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(richMenu),
+  })
+
+  if (!response.ok) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: await lineErrorMessage(response, 'ตรวจสอบ Rich Menu กับ LINE ไม่สำเร็จ'),
+    })
+  }
+}
+
+export async function createRichMenu(
+  accessToken: string,
+  richMenu: LineRichMenuObject,
+  fetchFn: typeof fetch = fetch,
+) {
+  const response = await fetchFn('https://api.line.me/v2/bot/richmenu', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(richMenu),
+  })
+
+  if (!response.ok) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: await lineErrorMessage(response, 'สร้าง Rich Menu บน LINE ไม่สำเร็จ'),
+    })
+  }
+
+  const result = await readResponseJson<{ richMenuId?: string }>(response)
+  if (!result?.richMenuId) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'LINE ไม่ได้ส่ง richMenuId กลับมา',
+    })
+  }
+
+  return { richMenuId: result.richMenuId }
+}
+
+export async function uploadRichMenuImage(
+  accessToken: string,
+  richMenuId: string,
+  image: Buffer,
+  contentType: 'image/png' | 'image/jpeg' = 'image/png',
+  fetchFn: typeof fetch = fetch,
+) {
+  const response = await fetchFn(
+    `https://api-data.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}/content`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': contentType,
+      },
+      body: new Uint8Array(image),
+    },
+  )
+
+  if (!response.ok) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: await lineErrorMessage(response, 'อัปโหลดรูป Rich Menu ไม่สำเร็จ'),
+    })
+  }
+}
+
+export async function setDefaultRichMenu(
+  accessToken: string,
+  richMenuId: string,
+  fetchFn: typeof fetch = fetch,
+) {
+  const response = await fetchFn(
+    `https://api.line.me/v2/bot/user/all/richmenu/${encodeURIComponent(richMenuId)}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: await lineErrorMessage(response, 'ตั้ง Rich Menu เป็นค่าเริ่มต้นไม่สำเร็จ'),
+    })
+  }
+}
+
+export async function cancelDefaultRichMenu(
+  accessToken: string,
+  fetchFn: typeof fetch = fetch,
+) {
+  const response = await fetchFn('https://api.line.me/v2/bot/user/all/richmenu', {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok && response.status !== 404) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: await lineErrorMessage(response, 'ยกเลิก Rich Menu เริ่มต้นไม่สำเร็จ'),
+    })
+  }
+}
+
+export async function deleteRichMenu(
+  accessToken: string,
+  richMenuId: string,
+  fetchFn: typeof fetch = fetch,
+) {
+  const response = await fetchFn(
+    `https://api.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok && response.status !== 404) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: await lineErrorMessage(response, 'ลบ Rich Menu เก่าไม่สำเร็จ'),
+    })
+  }
 }

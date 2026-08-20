@@ -4,6 +4,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -12,6 +13,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
+import type { RichMenuLayout, RichMenuSlot, RichMenuThemeId } from '../../shared/utils/rich-menu'
 
 export const businessTypeEnum = pgEnum('business_type', ['barber', 'spa'])
 
@@ -220,3 +222,35 @@ export const pointLedger = pgTable('point_ledger', {
   index('point_ledger_store_id_idx').on(table.storeId),
   index('point_ledger_customer_id_idx').on(table.customerId),
 ])
+
+export const richMenuLayoutEnum = pgEnum('rich_menu_layout', [
+  'six',
+  'three',
+  'two',
+  'four',
+  'large_left',
+  'large_right',
+])
+
+export const storeRichMenus = pgTable('store_rich_menus', {
+  storeId: uuid('store_id')
+    .primaryKey()
+    .references(() => stores.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').notNull().default(false),
+  name: varchar('name', { length: 80 }).notNull().default('เมนูแชทร้าน'),
+  chatBarText: varchar('chat_bar_text', { length: 14 }).notNull().default('เมนู'),
+  layout: richMenuLayoutEnum('layout').notNull().default('six'),
+  themeId: varchar('theme_id', { length: 32 }).notNull().default('ink').$type<RichMenuThemeId>(),
+  slots: jsonb('slots').$type<RichMenuSlot[]>().notNull().default([]),
+  customImageKey: text('custom_image_key'),
+  customImageUpdatedAt: timestamp('custom_image_updated_at', { withTimezone: true }),
+  lineRichMenuId: varchar('line_rich_menu_id', { length: 64 }),
+  draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }).defaultNow().notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  lastPublishError: text('last_publish_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type StoreRichMenuRow = typeof storeRichMenus.$inferSelect
+export type StoreRichMenuLayout = RichMenuLayout

@@ -19,6 +19,7 @@ const pageLabel = computed(() => {
   if (route.path === '/customers') return 'ลูกค้า'
   if (route.path === '/settings/store') return 'ตั้งค่าร้าน'
   if (route.path === '/settings/line-oa') return 'เชื่อมต่อ LINE OA'
+  if (route.path === '/settings/rich-menu') return 'เมนูแชท LINE'
   return 'Dashboard'
 })
 
@@ -109,6 +110,13 @@ watch(() => route.fullPath, () => {
               class="app-nav__link"
             >
               เชื่อมต่อ LINE OA
+            </NuxtLink>
+            <NuxtLink
+              v-if="storeOnboarded"
+              to="/settings/rich-menu"
+              class="app-nav__link"
+            >
+              เมนูแชท LINE
             </NuxtLink>
           </div>
         </section>

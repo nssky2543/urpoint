@@ -339,18 +339,12 @@ function stepState(stepId: number) {
 
 <template>
   <div class="page-wrap">
-    <div class="page-heading">
-      <div>
-        <p class="page-heading__eyebrow">
-          LINE OA CONNECTION
-        </p>
-        <h1>เชื่อมต่อ LINE OA</h1>
-      </div>
-      <p class="page-heading__desc">
-        ตั้งค่า LINE Login, LIFF และ Messaging API ของร้านนี้
-        แยกจากร้านอื่นอย่างชัดเจน
-      </p>
-    </div>
+    <SettingsPageHeader
+      eyebrow="LINE OA CONNECTION"
+      title="เชื่อมต่อ LINE OA"
+      section-title="ตั้งค่าการเชื่อมต่อ"
+      description="ตั้งค่า LINE Login, LIFF และ Messaging API ของร้านนี้ แยกจากร้านอื่นอย่างชัดเจน"
+    />
 
     <section class="line-primer">
       <h2>ก่อนเริ่ม ต้องมี 2 ช่องทางคนละอัน</h2>
@@ -626,7 +620,8 @@ function stepState(stepId: number) {
               <template v-if="settings.accessTokenMasked">
                 บันทึกแล้ว: {{ settings.accessTokenMasked }} · เว้นว่างเพื่อใช้ค่าเดิม<br>
               </template>
-              ระบบจะใช้ค่านี้กับ Webhook, Broadcast และ Rich Menu ในเฟสถัดไป
+              ระบบจะใช้ค่านี้กับ Webhook และเมนูแชท LINE — ตั้งเมนูได้ที่
+              <NuxtLink to="/settings/rich-menu">เมนูแชท LINE</NuxtLink>
             </small>
           </div>
 

@@ -30,7 +30,8 @@ export async function createCustomerSession(event: H3Event, storeCustomerId: str
   setCookie(event, COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // Tunnel / production are HTTPS even when NODE_ENV=development.
+    secure: getRequestURL(event).protocol === 'https:',
     path: '/',
     maxAge: SESSION_SECONDS,
   })

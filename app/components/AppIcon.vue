@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineProps<{
-  name: 'dashboard' | 'settings' | 'store' | 'line' | 'sun' | 'moon' | 'menu' | 'close' | 'logout' | 'users' | 'spark' | 'chevron-down' | 'check' | 'copy' | 'alert' | 'info'
+  name: 'dashboard' | 'settings' | 'store' | 'line' | 'sun' | 'moon' | 'menu' | 'close' | 'logout' | 'users' | 'spark' | 'chevron-down' | 'check' | 'copy' | 'alert' | 'info' | 'tag' | 'gift'
   size?: number
 }>()
 </script>
@@ -77,6 +77,16 @@ defineProps<{
     <template v-else-if="name === 'info'">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 11v5M12 8h.01" />
+    </template>
+    <template v-else-if="name === 'tag'">
+      <path d="M20.6 13.4 12.7 5.5A2 2 0 0 0 11.3 5H5v6.3a2 2 0 0 0 .6 1.4l7.9 7.9a2 2 0 0 0 2.8 0l4.3-4.3a2 2 0 0 0 0-2.9Z" />
+      <circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'gift'">
+      <rect x="4" y="10" width="16" height="11" rx="1.5" />
+      <path d="M12 10v11M4 14h16" />
+      <path d="M12 10H8.2A2.2 2.2 0 1 1 8.2 5.6C10.4 5.6 12 10 12 10Z" />
+      <path d="M12 10h3.8A2.2 2.2 0 1 0 15.8 5.6C13.6 5.6 12 10 12 10Z" />
     </template>
     <template v-else>
       <path d="m12 3 1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3Z" />
